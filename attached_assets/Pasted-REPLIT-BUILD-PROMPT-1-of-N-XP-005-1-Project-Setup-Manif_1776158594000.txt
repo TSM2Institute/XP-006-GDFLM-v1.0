@@ -1,0 +1,110 @@
+REPLIT BUILD PROMPT 1 of N — XP-005.1 Project Setup + Manifest
+
+=== CONTEXT ===
+We are building a Python pipeline called XP-005.1 (Boundary–Propagation Lensing Model) 
+that tests whether a specific set of equations can reproduce the observed gravitational 
+lensing convergence (κ) map of the Bullet Cluster.
+
+This is a scientific testing pipeline. No web app, no frontend, no server. 
+Python scripts only, run from the command line.
+
+All constants are pre-registered and locked. No tuning, no modification.
+
+=== TASK ===
+Create the project structure and manifest.py file.
+
+1. Create this folder structure:
+   xp005-pipeline/
+   ├── manifest.py
+   ├── src/
+   │   └── __init__.py
+   ├── data/
+   │   ├── raw/
+   │   ├── digitised/
+   │   └── processed/
+   ├── checkpoints/
+   ├── results/
+   └── docs/
+       └── checkpoint_packages/
+
+2. Create manifest.py with the following locked constants and equations.
+   This file is the single source of truth for the entire pipeline.
+   Every other module imports from here. Nothing is hardcoded elsewhere.
+
+   CONSTANTS:
+   - RHO_THRESHOLD = 1.0e-25        # g/cm³ — density transition scale
+   - SIGMA = 0.3 * RHO_THRESHOLD    # g/cm³ — phase function width (= 3.0e-26)
+   - SIGMA_GAL_KPC = 20.0           # kpc — galaxy smoothing kernel (physical)
+   - M_PROTON = 1.6726e-24          # g — proton mass (CODATA)
+   - CLUSTER_Z = 0.296              # Bullet Cluster redshift
+   - KPC_PER_ARCSEC = 4.413         # at z=0.296 (H0=70, Om=0.3, OL=0.7)
+   - SIGMA_GAL_ARCSEC = SIGMA_GAL_KPC / KPC_PER_ARCSEC  # ≈ 4.53 arcsec
+   
+   PASS/FAIL THRESHOLDS:
+   - CHI2_IMPROVEMENT_THRESHOLD = 0.25    # ≥ 25% reduction over baseline
+   - PEAK_OFFSET_THRESHOLD = 30.0         # arcsec
+   - RESIDUAL_RMS_THRESHOLD = 0.2         # normalised κ units
+   - STABILITY_THRESHOLD = 0.10           # < 10% variation across subsamples
+
+   FUNCTIONS (implement exactly as written, no modifications):
+   
+   def phase_function(rho):
+       """P(x) = exp(-((rho - rho_threshold)^2 / sigma^2))"""
+       return np.exp(-((rho - RHO_THRESHOLD)**2 / SIGMA**2))
+   
+   def boundary_emission(P, chi):
+       """Psi_emit = P(x) * chi(x)"""
+       return P * chi
+   
+   def propagation_field(P, grad_T, chi):
+       """Psi_prop = P(x) * |grad_T(x)| * chi(x)"""
+       return P * np.abs(grad_T) * chi
+   
+   def observed_field(psi_emit, psi_prop):
+       """Psi_obs = Psi_emit * Psi_prop"""
+       return psi_emit * psi_prop
+   
+   def model_convergence(psi_obs):
+       """kappa_model = Psi_obs / max(Psi_obs)"""
+       max_val = np.max(psi_obs)
+       if max_val == 0:
+           return np.zeros_like(psi_obs)
+       return psi_obs / max_val
+   
+   def baseline_convergence(surface_brightness):
+       """kappa_baseline = SB / max(SB)"""
+       max_val = np.max(surface_brightness)
+       if max_val == 0:
+           return np.zeros_like(surface_brightness)
+       return surface_brightness / max_val
+   
+   def density_from_ne(n_e):
+       """rho = n_e * m_p (pure hydrogen approximation)"""
+       return n_e * M_PROTON
+
+3. At the bottom of manifest.py, add a SHA-256 verification block:
+   - Compute SHA-256 of all constant values concatenated as a string
+   - Print it when manifest.py is run directly (python manifest.py)
+   - This lets us verify constants haven't been modified
+
+4. Add a requirements.txt with:
+   numpy
+   scipy
+   matplotlib
+   astropy
+   pandas
+
+5. Install the requirements.
+
+=== EXPECTED OUTPUT ===
+When you run: python manifest.py
+It should print all constants and the SHA-256 hash, confirming the manifest is intact.
+
+=== VERIFY ===
+- SIGMA should equal 3.0e-26
+- SIGMA_GAL_ARCSEC should be approximately 4.53
+- phase_function(RHO_THRESHOLD) should return 1.0 (peak of Gaussian)
+- phase_function(0) should return a very small number (far from threshold)
+- All functions should accept numpy arrays
+
+Do NOT proceed to any other module. This prompt creates the foundation only.
