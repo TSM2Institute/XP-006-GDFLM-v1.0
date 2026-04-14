@@ -29,12 +29,16 @@ cd xp005-pipeline
 python manifest.py               # Print constants + SHA-256 hash
 python src/mock_validation.py     # Gate 2: synthetic forward-model validation
 python src/module1_ingestion.py   # Module 1: data ingestion (HSC catalogue + parametric fields)
+python src/module2_fields.py     # Module 2: chi from galaxies + phase function P
+python src/module3_model.py      # Module 3: forward model → kappa_model & kappa_baseline
 ```
 
 ## Pipeline Stages
 1. **manifest.py** — Locked constants, equations, SHA-256 integrity check
 2. **src/mock_validation.py** — Synthetic 100x100 grid validation (8 checks, diagnostic plot, checkpoint)
 3. **src/module1_ingestion.py** — Downloads HSC v3 galaxy catalogue from MAST, builds parametric density/temperature fields from literature β-model parameters, saves all fields as .npy
+4. **src/module2_fields.py** — Builds chi(x,y) from galaxy catalogue (2D histogram + Gaussian smoothing), computes P(x,y) from phase_function(rho)
+5. **src/module3_model.py** — Runs full forward model: psi_emit → psi_prop → psi_obs → kappa_model + kappa_baseline (8 verification checks)
 
 ## Locked Constants (manifest.py)
 
