@@ -1,0 +1,12 @@
+*.fits
+*.pkl
+*.hdf5
+data/raw/*
+data/processed/*
+checkpoints/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!checkpoints/.gitkeep
+__pycache__/
+*.pyc
+.env

@@ -1,0 +1,149 @@
+REPLIT BUILD PROMPT 2 of N — XP-005.1 Mock Validation (Gate 2)
+
+=== CONTEXT ===
+We are building a Python scientific pipeline (no web app, no frontend).
+Prompt 1 created the project structure and manifest.py with locked constants 
+and equations. This prompt creates a synthetic mock validation to confirm 
+the forward model is correctly implemented before we touch real data.
+
+SHA-256 of manifest constants: b1ca5dc7900fa7f04330d72804f62b499fecdacbfd0aac2105feb8bea5524b2e
+Do NOT modify manifest.py. Import everything from it.
+
+=== HOUSEKEEPING ===
+Before building, create a .gitignore in the xp005-pipeline/ root with:
+
+*.fits
+*.pkl
+*.hdf5
+data/raw/*
+data/processed/*
+checkpoints/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!checkpoints/.gitkeep
+__pycache__/
+*.pyc
+.env
+
+Also create empty .gitkeep files in data/raw/, data/processed/, and checkpoints/ 
+so git tracks the empty directories.
+
+=== TASK ===
+Create src/mock_validation.py — a self-contained script that builds synthetic 
+2D fields, runs them through every manifest equation, and verifies the outputs 
+behave as expected.
+
+The mock uses a simple 100x100 pixel grid with fake but physically motivated fields.
+This is NOT a test on real data — it's a sanity check that the math works.
+
+STEP 1: Create synthetic input fields (100x100 grid)
+
+  a) Electron density field n_e(x,y):
+     - Place a Gaussian "cluster" at grid centre (50,50)
+     - Peak n_e = 0.1 cm^-3 (typical ICM core)
+     - Width = 15 pixels
+     - Background n_e = 0.001 cm^-3
+     - Convert to mass density: rho = n_e * M_PROTON
+
+  b) Temperature field T(x,y):
+     - Hot core: 14 keV at centre (Bullet main cluster)
+     - Cool "bullet": 6 keV Gaussian at offset position (65,50), width=8 pixels
+     - Background: 10 keV
+     - This creates a temperature gradient between hot and cool regions
+     - Compute grad_T using numpy.gradient, then magnitude |grad_T|
+
+  c) Galaxy surface density chi(x,y):
+     - Two Gaussian peaks (representing the two mass concentrations)
+     - Peak 1 at (45,50), width=12 pixels (main cluster galaxies)
+     - Peak 2 at (65,50), width=8 pixels (bullet galaxies)  
+     - Normalise to [0,1]: chi = Sigma_gal / max(Sigma_gal)
+
+STEP 2: Run the forward model using manifest functions
+
+  From manifest.py, import and call in order:
+  1. P = phase_function(rho)
+  2. psi_emit = boundary_emission(P, chi)
+  3. psi_prop = propagation_field(P, grad_T_magnitude, chi)
+  4. psi_obs = observed_field(psi_emit, psi_prop)
+  5. kappa_model = model_convergence(psi_obs)
+
+  Also create a fake surface brightness (proportional to n_e^2, 
+  standard X-ray emission) and compute:
+  6. kappa_baseline = baseline_convergence(fake_SB)
+
+STEP 3: Run verification checks (print PASS/FAIL for each)
+
+  CHECK 1 — Phase function peaks at rho_threshold:
+    P should be highest where rho is closest to rho_threshold.
+    Since our mock has rho >> rho_threshold everywhere (ICM densities 
+    ~1e-28 to ~1e-25 g/cm3), P should peak in the outskirts where 
+    rho approaches rho_threshold, not at the centre.
+    VERIFY: Location of max(P) is NOT at grid centre (50,50).
+
+  CHECK 2 — Psi_emit responds to both P and chi:
+    VERIFY: max(psi_emit) > 0 and psi_emit is not uniform.
+
+  CHECK 3 — Psi_prop responds to temperature gradient:
+    VERIFY: psi_prop is highest where |grad_T| AND P AND chi overlap.
+    psi_prop should be near-zero where grad_T is zero.
+
+  CHECK 4 — kappa_model is normalised to [0,1]:
+    VERIFY: max(kappa_model) == 1.0 and min(kappa_model) >= 0.0
+
+  CHECK 5 — kappa_baseline is normalised to [0,1]:
+    VERIFY: max(kappa_baseline) == 1.0 and min(kappa_baseline) >= 0.0
+
+  CHECK 6 — kappa_model != kappa_baseline:
+    VERIFY: The model and baseline produce DIFFERENT spatial distributions.
+    This confirms the propagation field (grad_T, chi) adds information 
+    beyond raw surface brightness.
+
+  CHECK 7 — Zero-input safety:
+    Run model_convergence(np.zeros((10,10))) — should return all zeros, no crash.
+    Run baseline_convergence(np.zeros((10,10))) — same.
+
+  CHECK 8 — P(x) value range:
+    Print min(P), max(P), mean(P).
+    All values should be in [0, 1].
+    If max(P) is very small (< 0.01), flag this — it means rho is 
+    nowhere near rho_threshold on this grid, which is physically 
+    informative (and will be relevant for the real data too).
+
+STEP 4: Save diagnostic plot
+
+  Create a 2x4 subplot figure (figsize 20x10) showing:
+  Row 1: rho(x,y), T(x,y), |grad_T|(x,y), chi(x,y)
+  Row 2: P(x,y), psi_emit(x,y), psi_obs(x,y), kappa_model(x,y)
+  
+  Each panel: imshow with colorbar, clear title.
+  Save to: results/mock_validation_fields.png
+
+STEP 5: Save checkpoint
+
+  Save all arrays to: checkpoints/mock_validation.pkl
+  (Use pickle with a dictionary of all fields)
+
+STEP 6: Print summary
+
+  Print a clear summary block:
+  - All 8 check results (PASS/FAIL)
+  - min/max/mean of each field
+  - Location of kappa_model peak (pixel coordinates)
+  - Location of kappa_baseline peak (pixel coordinates)
+  - Whether they differ
+
+=== EXPECTED BEHAVIOUR ===
+- P(x) will likely be very small everywhere because ICM densities 
+  (rho ~ 1e-28 to 1e-25 g/cm3) are close to or below rho_threshold (1e-25).
+  This is expected and informative.
+- If P peaks in the cluster outskirts (where rho approaches rho_threshold 
+  from below), the phase function is working correctly.
+- kappa_model should show structure driven by the overlap of P, chi, and grad_T.
+- kappa_baseline should just trace the X-ray surface brightness (n_e^2).
+
+=== RUN ===
+cd xp005-pipeline
+python src/mock_validation.py
+
+Report back: all 8 check results, the field statistics, the peak locations, 
+and attach the diagnostic plot.

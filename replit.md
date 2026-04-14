@@ -26,8 +26,13 @@ xp005-pipeline/
 
 ```bash
 cd xp005-pipeline
-python manifest.py
+python manifest.py               # Print constants + SHA-256 hash
+python src/mock_validation.py     # Gate 2: synthetic forward-model validation
 ```
+
+## Pipeline Stages
+1. **manifest.py** — Locked constants, equations, SHA-256 integrity check
+2. **src/mock_validation.py** — Synthetic 100x100 grid validation (8 checks, diagnostic plot, checkpoint)
 
 ## Locked Constants (manifest.py)
 
