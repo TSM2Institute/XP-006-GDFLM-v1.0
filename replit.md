@@ -28,11 +28,13 @@ xp005-pipeline/
 cd xp005-pipeline
 python manifest.py               # Print constants + SHA-256 hash
 python src/mock_validation.py     # Gate 2: synthetic forward-model validation
+python src/module1_ingestion.py   # Module 1: data ingestion (HSC catalogue + parametric fields)
 ```
 
 ## Pipeline Stages
 1. **manifest.py** — Locked constants, equations, SHA-256 integrity check
 2. **src/mock_validation.py** — Synthetic 100x100 grid validation (8 checks, diagnostic plot, checkpoint)
+3. **src/module1_ingestion.py** — Downloads HSC v3 galaxy catalogue from MAST, builds parametric density/temperature fields from literature β-model parameters, saves all fields as .npy
 
 ## Locked Constants (manifest.py)
 
