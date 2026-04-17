@@ -1,0 +1,14 @@
+{
+  "pixel_scale_arcsec": 2.0,
+  "grid_size": 200,
+  "centre_pixel": [
+    100,
+    100
+  ],
+  "bullet_pixel": [
+    132,
+    100
+  ],
+  "bullet_offset_pixels": 32,
+  "kpc_per_arcsec": 4.413
+}

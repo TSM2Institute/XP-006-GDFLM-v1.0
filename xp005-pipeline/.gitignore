@@ -1,12 +1,27 @@
+# Large data files
 *.fits
-*.pkl
 *.hdf5
+*.pkl
 data/raw/*
-data/processed/*
-checkpoints/*
+data/processed/*.npy
+checkpoints/*.pkl
+
+# Keep directory structure
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !checkpoints/.gitkeep
+
+# Python
 __pycache__/
 *.pyc
 .env
+*.egg-info/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.replit
+replit.nix
+.upm/
