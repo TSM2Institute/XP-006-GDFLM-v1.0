@@ -1,0 +1,322 @@
+REPLIT BUILD PROMPT 2 — Slim Module 1 (Field Regeneration)
+Pipeline: XP-006 GDFLM v1.0
+Sealed manifest SHA-256: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+Scope: Create src/module1_xp006.py that regenerates the four input fields (rho_field.npy, T_field.npy, grad_T_magnitude.npy, SB_field.npy) parametrically from Markevitch 2002/2006 constants. No HSC galaxy download. No χ field. Verify outputs against XP-005.1 sanity checks. Then audit anchor.
+Context
+XP-006 inherits XP-005.1's parametric ρ, T, ∇T, SB fields — same literature constants, same construction formulas, same byte-for-byte outputs. The XP-005.1 module that produces these (src/module1_ingestion.py) imports from the now-renamed manifest_xp005.py and also downloads a 30,000-row HSC galaxy catalogue we don't need. Cleanest approach is a slim XP-006-specific module that:
+
+Imports cleanly from our sealed manifest.py
+Mirrors the XP-005.1 parametric formulas exactly
+Skips the HSC download entirely
+Produces identical .npy outputs
+
+The XP-005.1 source has been inspected line-by-line and the formulas below mirror it.
+Step 1 — Create src/module1_xp006.py
+Create the file at /home/runner/workspace/xp006-pipeline/src/module1_xp006.py with EXACT content below:
+python"""
+module1_xp006.py — XP-006 GDFLM v1.0 — Slim Field Regeneration
+
+Regenerates the four input fields needed by the GDFLM model
+(rho_field, T_field, grad_T_magnitude, SB_field) parametrically
+from XP-005.1 literature constants. No HSC galaxy download.
+No phase-function constants. No chi field.
+
+Formulas mirror XP-005.1 src/module1_ingestion.py (Parts B and C only)
+byte-for-byte to preserve continuity. Imports cleanly from the sealed
+XP-006 manifest.
+
+Outputs (saved to ../data/processed/):
+    rho_field.npy         — gas density (g/cm^3)
+    T_field.npy           — temperature (keV)
+    grad_T_magnitude.npy  — |grad T| (keV / pixel, same convention as XP-005.1)
+    SB_field.npy          — surface brightness proxy (n_e^2)
+
+Run from the xp006-pipeline directory:
+    python src/module1_xp006.py
+"""
+
+import os
+import sys
+import json
+
+import numpy as np
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from manifest import (
+    GRID_SIZE,
+    PIXEL_SCALE_ARCSEC,
+    KPC_PER_ARCSEC,
+    DATA_PATHS,
+)
+
+
+# ==========================================================================
+# PHYSICAL CONSTANT (not a model parameter — defined locally with citation)
+# ==========================================================================
+
+M_PROTON = 1.6726e-24   # g   (CODATA proton mass; matches XP-005.1 manifest)
+
+
+# ==========================================================================
+# LITERATURE PARAMETERS — Markevitch 2002 / 2006 (mirror XP-005.1)
+# ==========================================================================
+
+LITERATURE_PARAMS = {
+    "n0_main":      {"value": 3.0e-3, "units": "cm^-3",
+                     "source": "Markevitch et al. 2002, ApJ 567, L27"},
+    "rc_main":      {"value": 250.0,  "units": "kpc",
+                     "source": "Markevitch et al. 2002, ApJ 567, L27"},
+    "beta_main":    {"value": 0.70,   "units": "dimensionless",
+                     "source": "Markevitch et al. 2002, ApJ 567, L27"},
+    "n0_bullet":    {"value": 4.0e-2, "units": "cm^-3",
+                     "source": "Markevitch 2006, ESA SP-604"},
+    "rc_bullet":    {"value": 50.0,   "units": "kpc",
+                     "source": "Markevitch 2006, ESA SP-604"},
+    "beta_bullet":  {"value": 0.60,   "units": "dimensionless",
+                     "source": "Markevitch 2006, ESA SP-604"},
+    "T_main":       {"value": 14.1,   "units": "keV",
+                     "source": "Markevitch 2006, ESA SP-604"},
+    "T_bullet":     {"value": 6.5,    "units": "keV",
+                     "source": "Markevitch 2006, ESA SP-604"},
+    "T_background": {"value": 10.0,   "units": "keV",
+                     "source": "Markevitch 2006, ESA SP-604"},
+}
+
+
+# ==========================================================================
+# GEOMETRY (mirror XP-005.1)
+# ==========================================================================
+
+CENTRE_PIXEL          = (100, 100)                      # main cluster
+BULLET_OFFSET_ARCSEC  = 65.0
+BULLET_OFFSET_PIXELS  = int(round(BULLET_OFFSET_ARCSEC / PIXEL_SCALE_ARCSEC))
+BULLET_PIXEL          = (CENTRE_PIXEL[0] + BULLET_OFFSET_PIXELS,
+                         CENTRE_PIXEL[1])  # → (132, 100)
+
+
+# ==========================================================================
+# FIELD CONSTRUCTION (mirror XP-005.1 Part B exactly)
+# ==========================================================================
+
+def beta_model(x, y, cx, cy, n0, rc_kpc, beta):
+    """Isothermal beta-model: n_e(r) = n0 * (1 + (r/rc)^2)^(-3 beta / 2)"""
+    dx = (x - cx) * PIXEL_SCALE_ARCSEC * KPC_PER_ARCSEC
+    dy = (y - cy) * PIXEL_SCALE_ARCSEC * KPC_PER_ARCSEC
+    r_kpc = np.sqrt(dx**2 + dy**2)
+    return n0 * (1.0 + (r_kpc / rc_kpc) ** 2) ** (-3.0 * beta / 2.0)
+
+
+def make_gaussian_2d(cx, cy, width_pix, amplitude, grid_size=GRID_SIZE):
+    y, x = np.mgrid[0:grid_size, 0:grid_size]
+    return amplitude * np.exp(
+        -((x - cx) ** 2 + (y - cy) ** 2) / (2 * width_pix ** 2)
+    )
+
+
+def build_density_field():
+    """Sum of two beta-models (main + bullet), converted to mass density."""
+    y, x = np.mgrid[0:GRID_SIZE, 0:GRID_SIZE]
+    n_e_main = beta_model(
+        x, y, CENTRE_PIXEL[0], CENTRE_PIXEL[1],
+        LITERATURE_PARAMS["n0_main"]["value"],
+        LITERATURE_PARAMS["rc_main"]["value"],
+        LITERATURE_PARAMS["beta_main"]["value"],
+    )
+    n_e_bullet = beta_model(
+        x, y, BULLET_PIXEL[0], BULLET_PIXEL[1],
+        LITERATURE_PARAMS["n0_bullet"]["value"],
+        LITERATURE_PARAMS["rc_bullet"]["value"],
+        LITERATURE_PARAMS["beta_bullet"]["value"],
+    )
+    n_e_total = n_e_main + n_e_bullet
+    rho = n_e_total * M_PROTON
+    return n_e_total, rho
+
+
+def build_temperature_field():
+    """T_bg + 60-px Gaussian at main + 20-px Gaussian at bullet."""
+    T_bg         = LITERATURE_PARAMS["T_background"]["value"]
+    T_main_amp   = LITERATURE_PARAMS["T_main"]["value"] - T_bg
+    T_bullet_amp = LITERATURE_PARAMS["T_bullet"]["value"] - T_bg
+
+    T = np.full((GRID_SIZE, GRID_SIZE), T_bg)
+    T += make_gaussian_2d(CENTRE_PIXEL[0], CENTRE_PIXEL[1], 60, T_main_amp)
+    T += make_gaussian_2d(BULLET_PIXEL[0], BULLET_PIXEL[1], 20, T_bullet_amp)
+
+    # IMPORTANT: np.gradient called WITHOUT pixel spacing argument,
+    # mirroring XP-005.1 exactly. Units are keV / pixel.
+    # This is intentional for byte-for-byte continuity with XP-005.1.
+    grad_Ty, grad_Tx = np.gradient(T)
+    grad_T_mag = np.sqrt(grad_Tx**2 + grad_Ty**2)
+    return T, grad_T_mag
+
+
+def build_surface_brightness(n_e_total):
+    """SB ∝ n_e² (line-of-sight integrated thermal bremsstrahlung proxy)."""
+    return n_e_total ** 2
+
+
+# ==========================================================================
+# MAIN
+# ==========================================================================
+
+if __name__ == "__main__":
+    print("=" * 70)
+    print("XP-006 — MODULE 1 (slim): PARAMETRIC FIELD REGENERATION")
+    print("=" * 70)
+
+    # Resolve absolute output paths
+    base_dir   = os.path.join(os.path.dirname(__file__), "..")
+    data_proc  = os.path.join(base_dir, "data", "processed")
+    os.makedirs(data_proc, exist_ok=True)
+
+    print("\n--- LITERATURE PARAMETERS ---")
+    for key, info in LITERATURE_PARAMS.items():
+        print(f"  {key:14s} = {info['value']:>8}  [{info['units']:<13}]  — {info['source']}")
+
+    print(f"\n--- GEOMETRY ---")
+    print(f"  Grid:                 {GRID_SIZE}x{GRID_SIZE}")
+    print(f"  Pixel scale:          {PIXEL_SCALE_ARCSEC} arcsec/pixel")
+    print(f"  Main cluster centre:  pixel {CENTRE_PIXEL}")
+    print(f"  Bullet centre:        pixel {BULLET_PIXEL} (offset {BULLET_OFFSET_PIXELS} px)")
+
+    print("\n--- BUILDING FIELDS ---")
+    n_e_total, rho = build_density_field()
+    T, grad_T_mag  = build_temperature_field()
+    SB             = build_surface_brightness(n_e_total)
+
+    # Save outputs (paths defined in manifest DATA_PATHS, but we resolve
+    # against the module's parent directory for portability)
+    out = {
+        "rho_field.npy":        rho,
+        "T_field.npy":          T,
+        "grad_T_magnitude.npy": grad_T_mag,
+        "SB_field.npy":         SB,
+    }
+    print("\n--- SAVING OUTPUTS ---")
+    for fname, arr in out.items():
+        path = os.path.join(data_proc, fname)
+        np.save(path, arr)
+        print(f"  {path}   shape={arr.shape}   dtype={arr.dtype}")
+
+    print("\n--- SANITY CHECKS ---")
+    rho_peak_idx = np.unravel_index(np.argmax(rho), rho.shape)
+    T_peak_idx   = np.unravel_index(np.argmax(T),   T.shape)
+    SB_peak_idx  = np.unravel_index(np.argmax(SB),  SB.shape)
+    grad_T_peak_idx = np.unravel_index(np.argmax(grad_T_mag), grad_T_mag.shape)
+
+    print(f"  rho        peak pixel = {rho_peak_idx}    (expect near bullet (100,132) or main (100,100))")
+    print(f"             min={rho.min():.3e}  max={rho.max():.3e}  mean={rho.mean():.3e}  g/cm^3")
+    print(f"  T          peak pixel = {T_peak_idx}    (expect near main (100,100))")
+    print(f"             min={T.min():.3f}    max={T.max():.3f}    mean={T.mean():.3f}    keV")
+    print(f"             T at bullet pixel (100,132) = {T[100, 132]:.3f} keV   "
+          f"(XP-005.1 produced 10.06)")
+    print(f"  grad_T     peak pixel = {grad_T_peak_idx}")
+    print(f"             min={grad_T_mag.min():.3e}  max={grad_T_mag.max():.3e}  mean={grad_T_mag.mean():.3e}")
+    print(f"  SB         peak pixel = {SB_peak_idx}    (expect near bullet (100,132))")
+    print(f"             min={SB.min():.3e}  max={SB.max():.3e}  mean={SB.mean():.3e}")
+    print(f"             SB strictly non-negative: {(SB >= 0).all()}")
+
+    print("\n--- DONE ---")
+    print("All four .npy fields written to data/processed/.")
+    print("Next: Build Prompt 3 — mock validation of K(x) summation (Gate 2).")
+Step 2 — Verify imports and syntax before running
+bashcd /home/runner/workspace/xp006-pipeline
+python -c "from src import module1_xp006; print('Import OK')"
+If this prints Import OK, proceed. If it errors, stop and report the full traceback — don't try to fix and continue.
+Step 3 — Confirm SHA-256 of manifest.py is still sealed before running anything that depends on it
+bashmd5sum manifest.py
+python manifest.py
+Must still print:
+
+md5: ad2f062e4538c6006031b9033337dbe0
+hash: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+
+If either has drifted, stop and report. The seal is the ground truth.
+Step 4 — Run the module
+bashcd /home/runner/workspace/xp006-pipeline
+python src/module1_xp006.py
+Capture and report the entire stdout, especially the SANITY CHECKS section.
+Step 5 — Verify the four files exist with correct shape and dtype
+bashls -la data/processed/*.npy
+Then a Python check:
+bashpython -c "
+import numpy as np
+
+files = ['rho_field.npy', 'T_field.npy', 'grad_T_magnitude.npy', 'SB_field.npy']
+for f in files:
+    arr = np.load(f'data/processed/{f}')
+    print(f'{f:25s}  shape={arr.shape}  dtype={arr.dtype}  min={arr.min():.4e}  max={arr.max():.4e}')
+    peak = np.unravel_index(np.argmax(arr), arr.shape)
+    print(f'{\"\":25s}  peak at pixel {peak}')
+"
+Step 6 — Cross-check against XP-005.1 sanity expectations
+Per the XP-005.1 chat record (verified in conversation_search):
+
+rho: peak should be at or near pixel (100, 132) — bullet subcluster (axis order: row=100, col=132)
+T: peak should reach ~14.1 keV at the main cluster Gaussian core
+T at bullet (100, 132): should equal 10.06 keV (XP-005.1's exact value — Gaussian superposition blends T_main into the bullet location). This is the byte-for-byte continuity test.
+SB: peak should be at the bullet (100, 132) (n_e² is dominated by the high-density bullet)
+SB: must be strictly non-negative
+
+Critical continuity check: If T[100, 132] ≠ 10.06 (rounded to 2 d.p.), we have a numerical drift from XP-005.1 and need to investigate before proceeding. Other peak-pixel matches are flexible by ±1 pixel for legitimate floating-point reasons; the T value is the strict test.
+Step 7 — Commit and audit-anchor
+Let Replit's auto-checkpoint capture the file changes (it will). Then add the audit anchor:
+bashcd /home/runner/workspace
+git status
+git log --oneline -5
+Report what's there. Then:
+bashgit add -A
+git commit --allow-empty -m "AUDIT ANCHOR: XP-006 GDFLM v1.0 — Module 1 (slim) field regeneration
+
+Build Phase 2 complete. Four input fields regenerated parametrically from
+Markevitch 2002/2006 literature constants, mirroring XP-005.1 byte-for-byte.
+
+=== SEAL UNCHANGED ===
+Manifest SHA-256: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+Manifest md5:     ad2f062e4538c6006031b9033337dbe0
+
+=== NEW IN THIS COMMIT ===
+- src/module1_xp006.py   (slim, no HSC download, no chi field)
+- data/processed/rho_field.npy           [gitignored, regenerable]
+- data/processed/T_field.npy             [gitignored, regenerable]
+- data/processed/grad_T_magnitude.npy    [gitignored, regenerable]
+- data/processed/SB_field.npy            [gitignored, regenerable]
+
+=== CONTINUITY VERIFIED ===
+- Formulas: byte-for-byte mirror of XP-005.1 src/module1_ingestion.py Part B
+- T at bullet pixel (100, 132) = 10.06 keV  (XP-005.1 exact value)
+- M_PROTON = 1.6726e-24 g (CODATA, matches XP-005.1 manifest)
+- np.gradient called without pixel-spacing arg (mirrors XP-005.1 convention,
+  units are keV/pixel; absolute scale is flattened by min-max normalisation
+  in the GDFLM model)
+
+=== DELIBERATELY OMITTED ===
+- HSC v3 galaxy catalogue download (chi field not used by GDFLM)
+- chi_field.npy generation
+- Phase function constants (RHO_THRESHOLD, SIGMA — not used by GDFLM)
+
+=== GATES ===
+Gate 1 (Planning):       PASS
+Gate 1 (Manifest seal):  PASS
+Gate 2 (Mock validation): pending — Build Prompt 3
+
+=== NEXT ===
+Build Prompt 3 — mock validation of K(x) summation on synthetic fields
+to verify the GDFLM model equation behaves as designed before live run."
+
+git log --oneline -5
+git push origin main
+Report Back
+ItemValueStep 2 — Import OKyes / no (paste any error)Step 3 — manifest md5 unchanged (ad2f062e…dbe0)yes / noStep 3 — manifest hash unchanged (2faf4b6c…ccfc4)yes / noStep 4 — full stdout from python src/module1_xp006.py(paste, may be long)Step 5 — all four .npy files present, shapes (200,200), dtype float64yes / noStep 6 — rho peak pixel(paste)Step 6 — T peak pixel(paste)Step 6 — T at pixel (100, 132)(paste — must round to 10.06)Step 6 — SB peak pixel(paste)Step 6 — SB strictly non-negativeyes / noStep 7 — git status before commit(paste)Step 7 — annotation commit SHA(paste)Step 7 — git push resultsuccess / error
+Do Not
+
+Modify manifest.py or manifest_xp005.py
+Modify the formulas in module1_xp006.py — they mirror XP-005.1 deliberately
+Add np.gradient(T, PIXEL_SCALE_ARCSEC) — that would break XP-005.1 continuity
+Run module1_ingestion.py (the original XP-005.1 module) — it would fail on import and pollute the working tree
+Generate or save a chi_field.npy — XP-006 does not use chi
+Force-push or amend prior commits
+
+
+End of Build Prompt 2.
