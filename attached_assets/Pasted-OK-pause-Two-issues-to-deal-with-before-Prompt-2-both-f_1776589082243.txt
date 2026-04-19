@@ -1,0 +1,150 @@
+OK — pause. Two issues to deal with before Prompt 2, both fixable, neither fatal.
+Status Check
+The good:
+
+Files are correct on GitHub (origin/main at 09542bb)
+Manifest SHA 2faf4b6c…ccfc4 survived intact (verified in Prompt 1A, byte-exact md5 ad2f062e…dbe0)
+Inherited inputs preserved
+Push succeeded
+
+The not-so-good:
+
+No proper rename in git history. Replit's auto-checkpoint committed mid-stream, so the rename appears as an add of xp006-pipeline/ rather than R100 from xp005-pipeline/. Git blob SHAs for unchanged file contents are still the same (so byte-level provenance is technically traceable), but git log --follow won't trace history across the move cleanly without manual inspection. For an integrity-fix programme audit trail, this matters.
+No commit with our intended message. The audit message describing what was done, why, and the seal hash didn't land. The checkpoint commits are likely opaque ("Agent checkpoint" or similar).
+
+What I Want to Do Before Prompt 2
+Two small remediation steps — they cost us 5 minutes now and save us from explaining the gap to a future reviewer (or to Geoffrey, or to ourselves in three months).
+ActionWhy(a) Inspect what's actually on the remote — log of recent commits, what they contain, what they sayConfirm exactly what state we're in. Don't operate on assumptions.(b) Add an empty annotation commit with the proper audit message + seal hashCreates a clean anchor point in the log. Doesn't rewrite history (which would invalidate the auto-checkpoint commits Replit already pushed). Gives any future reviewer a single commit to point at when verifying the seal.
+What I'm not suggesting:
+
+Force-push or git rebase -i to rewrite the auto-checkpoints. Replit relies on those internally and rewriting them tends to break things.
+Re-doing the rename. The files are where they need to be; the git-history annotation is the issue, not the working tree.
+
+Workflow Lesson Going Forward
+Replit's auto-checkpoint behaviour effectively pre-empts any commit message we craft. We've now seen it happen twice in this session (the git mv failure, and now the lost commit message). Two options for future prompts:
+
+Accept it. Stop authoring commit messages, let Replit auto-checkpoint, add an empty annotation commit at the end of each phase with the message we want for the audit trail.
+Disable auto-checkpoint if Replit allows that for our pipeline. Cleaner but might surprise other things.
+
+I lean toward option 1 — it's robust, doesn't fight the tool, and the empty annotation commit is a perfectly legitimate git pattern for audit anchors. We can add it to the workflow doc alongside the SHA-execution note. Worth raising with Grok at the next gate.
+Build Prompt 1C — Annotation Commit + Verification
+This is short and surgical. One prompt, then we're cleanly at the start of Build Prompt 2.
+
+REPLIT BUILD PROMPT 1C — Audit Annotation + Phase 1 Verification
+Pipeline: XP-006 GDFLM v1.0
+Sealed manifest SHA-256: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+Scope: Inspect the actual state of the XP-006 repo on origin/main, then add an empty annotation commit with the proper audit message anchoring the seal. No file changes, no force-push, no history rewrite.
+Step 1 — Inspect what actually landed on origin/main.
+bashcd /home/runner/workspace
+echo "=== Branch and remote ==="
+git branch -a
+git remote -v
+echo ""
+echo "=== Last 10 commits with messages ==="
+git log --oneline -10
+echo ""
+echo "=== Detail on the last 3 commits ==="
+git log -3 --stat
+echo ""
+echo "=== Files at HEAD inside xp006-pipeline ==="
+git ls-tree -r HEAD --name-only | grep ^xp006-pipeline | head -30
+echo ""
+echo "=== Confirm critical files exist at HEAD ==="
+git ls-tree -r HEAD --name-only | grep -E "(manifest\.py|manifest_xp005\.py|clowe2006_kappa\.csv|grid_params\.json)$"
+echo ""
+echo "=== Confirm manifest.py SHA on disk still matches seal ==="
+cd xp006-pipeline
+md5sum manifest.py
+python manifest.py
+Expected:
+
+manifest.py md5 still ad2f062e4538c6006031b9033337dbe0
+python manifest.py still prints 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+manifest_xp005.py, manifest.py, clowe2006_kappa.csv, grid_params.json all visible at HEAD inside xp006-pipeline/
+
+Report all output before proceeding. If any of the expected items are missing or different, stop.
+
+Step 2 — Add an empty annotation commit anchoring the seal.
+(This is a standard git pattern. --allow-empty permits a commit with no file changes, used precisely for audit annotations like this one.)
+bashcd /home/runner/workspace
+git commit --allow-empty -m "AUDIT ANCHOR: XP-006 GDFLM v1.0 manifest seal
+
+This is an empty annotation commit. No file changes. It exists to provide
+a single, clean audit anchor for the XP-006 GDFLM v1.0 manifest seal,
+because the preceding file-change commits were created automatically by
+Replit's checkpoint system mid-session and do not carry the intended
+audit message.
+
+=== SEAL ===
+Pipeline:        XP-006 Gradient-Dominant Field Lensing Model (GDFLM v1.0)
+Target:          Bullet Cluster (1E 0657-558)
+Manifest SHA-256: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+Manifest md5:     ad2f062e4538c6006031b9033337dbe0
+Manifest size:    8526 bytes
+
+Verified by:
+- Claude (independent Python 3.12 execution, hash + md5 + payload inspection)
+- Grok Main + agents (payload inspection, line-by-line review of 469-char hash payload)
+
+=== INHERITANCE ===
+From:  XP-005.1 Boundary-Propagation Lensing Model
+       SHA-256: b1ca5dc7900fa7f04330d72804f62b499fecdacbfd0aac2105feb8bea5524b2e
+       https://github.com/TSM2Institute/XP-005.1-Boundary-Propagation-Lensing-Model
+
+Inherited (byte-for-byte):
+- data/digitised/clowe2006_kappa.csv
+- data/processed/grid_params.json
+- src/module1_ingestion.py (parametric field generator from Markevitch 2002/2006)
+- All four PASS/FAIL thresholds (chi2 improvement >=25%, peak offset <30 arcsec,
+  RMS <=0.2, stability <10%)
+
+Removed for XP-006 (explicit):
+- Galaxy chi field (not used by GDFLM)
+- Phase function constants RHO_THRESHOLD, SIGMA (not used by GDFLM)
+
+=== MODEL ===
+K(x) = alpha * rho_hat(x) + beta * |grad_T_hat(x)| + gamma * |grad_rho_hat(x)|
+alpha = beta = gamma = 1.0  (zero free parameters)
+Each input field min-max normalised to [0,1] independently before summation.
+K is then peak-normalised for comparison against kappa_obs.
+
+=== GATES PASSED ===
+Gate 1 (Planning):       PASS — Claude + Grok co-design (2026-04-19)
+Gate 1 (Manifest seal):  PASS — SHA verified by execution + inspection (2026-04-19)
+
+=== NOTE ON PRECEDING COMMITS ===
+The preceding commits on this branch (file changes implementing the seal)
+were created by Replit's automatic checkpoint system during the build session
+and may carry generic checkpoint messages. The file content at HEAD is correct
+and byte-exact. This annotation commit is the formal audit reference point
+for the XP-006 GDFLM v1.0 seal.
+
+=== NEXT ===
+Build Prompt 2 — Slim Module 1: regenerate rho, T, grad_T, SB fields
+parametrically from Markevitch 2002/2006 constants (no HSC galaxy download)."
+
+git log --oneline -5
+git push origin main
+git log --oneline origin/main -5
+
+Step 3 — Confirm push and final state.
+bashecho ""
+echo "=== Final state of origin/main ==="
+git log origin/main -1 --format=fuller
+echo ""
+echo "=== Confirm seal is unchanged on disk ==="
+cd /home/runner/workspace/xp006-pipeline
+md5sum manifest.py
+python manifest.py
+
+Report Back
+ItemValueStep 1 — last 10 commits (paste)(paste)Step 1 — Critical files visible at HEADyes / noStep 1 — manifest.py md5 still ad2f062e…dbe0yes / noStep 1 — python manifest.py still prints 2faf4b6c…ccfc4yes / noStep 2 — annotation commit SHA(paste)Step 2 — git push resultsuccess / errorStep 3 — annotation commit visible on origin/mainyes / noStep 3 — final md5 + hash unchangedyes / no
+Do Not
+
+Modify manifest.py or manifest_xp005.py
+Force-push, amend, or rebase any prior commit
+Touch .gitignore or any inherited input files
+Add files in this prompt — annotation commit only
+
+
+End of Build Prompt 1C.
