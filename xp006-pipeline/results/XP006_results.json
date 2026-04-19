@@ -1,0 +1,110 @@
+{
+  "pipeline": "XP-006_GDFLM_v1.0",
+  "timestamp_utc": "2026-04-19T09:25:58.047421Z",
+  "manifest_sha256": "2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4",
+  "kappa_obs": {
+    "source_csv": "data/digitised/clowe2006_kappa.csv",
+    "n_positive_pixels": 7487,
+    "manifest_expected_pixel_count": 7487,
+    "pixel_count_matches_manifest": true,
+    "peak_pixel_row_col": [
+      92,
+      87
+    ]
+  },
+  "kappa_model": {
+    "peak_pixel_row_col": [
+      100,
+      129
+    ]
+  },
+  "kappa_baseline": {
+    "peak_pixel_row_col": [
+      100,
+      132
+    ]
+  },
+  "metrics_full_region": {
+    "chi2_model": 65131.12424405523,
+    "chi2_dof_model": 8.699228562048248,
+    "chi2_baseline": 126040.30719379589,
+    "chi2_dof_baseline": 16.834554186429262,
+    "chi2_dof_improvement_fraction": 0.483251622483659,
+    "peak_offset_arcsec": 85.5102333057278,
+    "residual_rms": 0.412922365361996,
+    "dof": 7487,
+    "comparison_sigma": 0.14
+  },
+  "bootstrap_stability": {
+    "seeds": [
+      1,
+      2,
+      3
+    ],
+    "fraction": 0.6666666666666666,
+    "n_runs": 3,
+    "per_run": [
+      {
+        "seed": 1,
+        "n_pixels": 4991,
+        "chi2": 43444.015548609386,
+        "chi2_dof": 8.704471157805928
+      },
+      {
+        "seed": 2,
+        "n_pixels": 4991,
+        "chi2": 42855.728097952204,
+        "chi2_dof": 8.58660150229457
+      },
+      {
+        "seed": 3,
+        "n_pixels": 4991,
+        "chi2": 43700.75161645908,
+        "chi2_dof": 8.755910963025261
+      }
+    ],
+    "chi2_dof_values": [
+      8.704471157805928,
+      8.58660150229457,
+      8.755910963025261
+    ],
+    "stability_metric": 0.019500468443536402,
+    "stability_metric_definition": "(max - min) / mean of the 3 chi2/dof values"
+  },
+  "pass_fail": {
+    "thresholds": {
+      "chi2_improvement_min": 0.25,
+      "peak_offset_max_arcsec": 30.0,
+      "residual_rms_max": 0.2,
+      "stability_max": 0.1
+    },
+    "criteria": [
+      {
+        "name": "\u03c7\u00b2/dof improvement \u2265 25%",
+        "passed": true,
+        "measured": "+0.4833",
+        "threshold": "\u2265 +0.25"
+      },
+      {
+        "name": "Peak offset < 30 arcsec",
+        "passed": false,
+        "measured": "85.51\"",
+        "threshold": "< 30.0\""
+      },
+      {
+        "name": "Residual RMS \u2264 0.2",
+        "passed": false,
+        "measured": "0.4129",
+        "threshold": "\u2264 0.2"
+      },
+      {
+        "name": "Stability < 10%",
+        "passed": true,
+        "measured": "0.0195",
+        "threshold": "< 0.1"
+      }
+    ],
+    "n_pass": 2,
+    "overall_verdict": "FAIL"
+  }
+}
