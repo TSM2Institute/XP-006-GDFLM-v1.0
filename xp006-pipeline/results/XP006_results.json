@@ -1,16 +1,19 @@
 {
   "pipeline": "XP-006_GDFLM_v1.0",
-  "timestamp_utc": "2026-04-19T09:25:58.047421Z",
+  "timestamp_utc": "2026-04-19T09:42:16.724378Z",
   "manifest_sha256": "2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4",
   "kappa_obs": {
-    "source_csv": "data/digitised/clowe2006_kappa.csv",
+    "reconstructed_from_csv": "data/digitised/clowe2006_kappa.csv",
+    "reconstruction_module": "src/kappa_obs_reconstruction.py",
     "n_positive_pixels": 7487,
     "manifest_expected_pixel_count": 7487,
     "pixel_count_matches_manifest": true,
     "peak_pixel_row_col": [
       92,
       87
-    ]
+    ],
+    "reference_snapshot": "data/processed/kappa_obs.npy",
+    "reference_snapshot_sha256_expected": "6b75561bde292b07b21f92c8de2ba59d09616aa3aed65b4314e576ac1c6a4831"
   },
   "kappa_model": {
     "peak_pixel_row_col": [

@@ -1,0 +1,526 @@
+REPLIT BUILD PROMPT 4.1 — Provenance Fix (CSV Parser + Reference Snapshot Commit)
+Pipeline: XP-006 GDFLM v1.0
+Sealed manifest SHA-256: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+Scope: Replace the in-line np.load("kappa_obs.npy") hack inside run_xp006.py with a proper 9-contour CSV parser adapted from XP-005.1 module5_comparison.py. Verify it reproduces the existing kappa_obs.npy byte-for-byte (SHA 6b75561b…4831). Re-run the full pipeline. Verify the four metric values are unchanged. Commit the parser, the reference snapshot, the run notes, and a clean results.json with honest provenance.
+Why This Matters
+The existing XP006_results.json declares kappa_obs.source_csv = "data/digitised/clowe2006_kappa.csv" but the run actually loaded a .npy file inherited from XP-005.1 that is not in the XP-006 git tree. The numbers are correct; the provenance record is misleading. A skeptic cloning the XP-006 repo right now cannot reproduce the verdict. This prompt closes that gap.
+Step 1 — Confirm seal and current state
+bashcd /home/runner/workspace/xp006-pipeline
+md5sum manifest.py
+python manifest.py
+sha256sum data/processed/kappa_obs.npy
+ls -la data/digitised/clowe2006_kappa.csv data/processed/kappa_obs.npy
+Must print:
+
+manifest md5: ad2f062e4538c6006031b9033337dbe0
+manifest hash: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+kappa_obs.npy SHA: 6b75561bde292b07b21f92c8de2ba59d09616aa3aed65b4314e576ac1c6a4831
+
+If any drift, stop and report.
+Step 2 — Add matplotlib to requirements (if not already present)
+bashcat requirements.txt
+If matplotlib not listed, append:
+bashecho "matplotlib" >> requirements.txt
+pip install matplotlib
+(Matplotlib is needed for matplotlib.path.Path polygon containment, which is how XP-005.1 fills contour interiors.)
+Step 3 — Create src/kappa_obs_reconstruction.py
+Standalone module containing the reconstruction logic, lifted from XP-005.1 module5_comparison.py lines 60–181 with imports adapted. Create at /home/runner/workspace/xp006-pipeline/src/kappa_obs_reconstruction.py with EXACT content:
+python"""
+kappa_obs_reconstruction.py — XP-006 GDFLM v1.0
+
+Reconstructs the 200×200 kappa_obs convergence map from the digitised
+9-contour CSV (data/digitised/clowe2006_kappa.csv).
+
+Logic adapted byte-for-byte from XP-005.1 src/module5_comparison.py
+(parse_digitised_csv, transform_to_radec, radec_to_pixel,
+kappa_value_from_name, reconstruct_kappa_obs).
+
+Calibration anchors and centre coordinates are inherited from XP-005.1
+without modification. Polygon fill via matplotlib.path.Path.
+
+Output: 200×200 numpy array, normalised to [0, max] = [0, max/max] = [0,1]
+where max is the highest kappa contour level present (kappa_0.37 in
+practice). Comparison region is kappa_obs > 0 (≈7,487 pixels).
+
+This module is the canonical regeneration path for kappa_obs from the
+in-repo CSV. It is invoked by run_xp006.py and produces a reference
+.npy snapshot at data/processed/kappa_obs.npy committed to git for
+audit purposes.
+"""
+
+import csv
+import os
+
+import numpy as np
+from matplotlib.path import Path as MplPath
+
+
+# Calibration anchors for digitised CSV → RA/Dec (inherited from XP-005.1)
+X1_DIG, RA1  = -5.6078e-3, 104.675
+X2_DIG, RA2  = -4.9944,    104.550
+Y1_DIG, DEC1 = -2.8039e-2, -55.9667
+Y2_DIG, DEC2 = -5.5508e-2, -55.9333
+
+# Standard Bullet Cluster centre (midpoint of Clowe figure)
+RA_CENTRE  = 104.625
+DEC_CENTRE = -55.950
+
+
+def parse_digitised_csv(filepath):
+    """Parse WebPlotDigitizer CSV with paired X,Y columns per contour."""
+    with open(filepath, "r") as f:
+        reader = csv.reader(f)
+        rows = list(reader)
+
+    if len(rows) < 3:
+        raise ValueError("Digitised CSV has fewer than 3 rows; cannot parse.")
+
+    contour_header = rows[0]
+    n_cols = len(contour_header)
+
+    # Build contour name list (each contour spans 2 columns: X, Y)
+    contours = []
+    col = 0
+    while col < n_cols:
+        name = contour_header[col].strip()
+        if not name:
+            col += 1
+            continue
+        contours.append({"name": name, "x_col": col, "y_col": col + 1, "points": []})
+        col += 2
+
+    # Parse data rows
+    for r in rows[2:]:
+        for c in contours:
+            if c["x_col"] >= len(r) or c["y_col"] >= len(r):
+                continue
+            xs = r[c["x_col"]].strip()
+            ys = r[c["y_col"]].strip()
+            if xs == "" or ys == "":
+                continue
+            try:
+                x = float(xs)
+                y = float(ys)
+                c["points"].append((x, y))
+            except ValueError:
+                continue
+
+    return contours
+
+
+def transform_to_radec(x_dig, y_dig):
+    """Linear interpolation from digitised CSV coordinates to RA/Dec."""
+    ra  = RA1  + (x_dig - X1_DIG) * (RA2  - RA1)  / (X2_DIG - X1_DIG)
+    dec = DEC1 + (y_dig - Y1_DIG) * (DEC2 - DEC1) / (Y2_DIG - Y1_DIG)
+    return ra, dec
+
+
+def radec_to_pixel(ra, dec, grid_params):
+    """Convert RA/Dec to pixel coordinates on the 200×200 grid."""
+    pixel_scale = grid_params["pixel_scale_arcsec"]
+    cx, cy = grid_params["centre_pixel"]
+    cos_dec = np.cos(np.radians(DEC_CENTRE))
+    col = cx + (RA_CENTRE - ra) * 3600.0 * cos_dec / pixel_scale
+    row = cy - (dec - DEC_CENTRE) * 3600.0 / pixel_scale
+    return col, row
+
+
+def kappa_value_from_name(name):
+    """Extract numerical kappa level from contour name like 'kappa_0.23_main'."""
+    parts = name.split("_")
+    for p in parts[1:]:
+        try:
+            return float(p)
+        except ValueError:
+            continue
+    raise ValueError(f"Cannot parse kappa value from contour name: {name}")
+
+
+def reconstruct_kappa_obs_unnormalised(contours, grid_params):
+    """Fill polygon interiors with their corresponding kappa contour levels.
+
+    Higher levels overwrite lower levels (so each pixel ends at the highest
+    contour it is enclosed by). Returns the unnormalised array.
+    """
+    grid_size = grid_params["grid_size"]
+    kappa_obs = np.zeros((grid_size, grid_size))
+
+    levels = {}
+    for c in contours:
+        if not c["points"]:
+            continue
+        level = kappa_value_from_name(c["name"])
+        levels.setdefault(level, []).append(c)
+
+    inside_counts = []
+
+    for level in sorted(levels.keys()):
+        for c in levels[level]:
+            radec_pts = [transform_to_radec(x, y) for (x, y) in c["points"]]
+            pixel_pts = [radec_to_pixel(ra, dec, grid_params) for (ra, dec) in radec_pts]
+            cols = np.array([p[0] for p in pixel_pts])
+            rows = np.array([p[1] for p in pixel_pts])
+
+            inside = (
+                (cols >= 0) & (cols < grid_size) &
+                (rows >= 0) & (rows < grid_size)
+            )
+            inside_counts.append((c["name"], int(np.sum(inside)), int(np.sum(~inside))))
+
+            if len(pixel_pts) >= 3:
+                first = pixel_pts[0]
+                last = pixel_pts[-1]
+                gap = float(np.hypot(first[0] - last[0], first[1] - last[1]))
+                if gap > 5.0:
+                    print(f"  WARNING: contour '{c['name']}' not closed "
+                          f"(gap={gap:.2f} px); closing manually")
+                pixel_pts_closed = pixel_pts + [pixel_pts[0]]
+
+                poly = MplPath(pixel_pts_closed)
+                yy, xx = np.mgrid[0:grid_size, 0:grid_size]
+                pts_grid = np.column_stack([xx.ravel(), yy.ravel()])
+                inside_mask = poly.contains_points(pts_grid).reshape(grid_size, grid_size)
+
+                kappa_obs[inside_mask] = level
+
+    return kappa_obs, inside_counts
+
+
+def reconstruct_kappa_obs(csv_path, grid_params):
+    """Top-level: parse CSV, reconstruct, normalise to peak=1.
+
+    Returns (kappa_obs_normalised, kappa_obs_unnormalised, inside_counts).
+    """
+    contours = parse_digitised_csv(csv_path)
+    kappa_unnorm, inside_counts = reconstruct_kappa_obs_unnormalised(contours, grid_params)
+    max_unnorm = float(np.max(kappa_unnorm))
+    if max_unnorm == 0:
+        raise RuntimeError("kappa_obs is all zero after reconstruction.")
+    kappa_obs = kappa_unnorm / max_unnorm
+    return kappa_obs, kappa_unnorm, inside_counts
+
+
+if __name__ == "__main__":
+    # Standalone regeneration entry point — produces and saves the snapshot.
+    base_dir   = os.path.join(os.path.dirname(__file__), "..")
+    csv_path   = os.path.join(base_dir, "data", "digitised", "clowe2006_kappa.csv")
+    grid_path  = os.path.join(base_dir, "data", "processed", "grid_params.json")
+    out_path   = os.path.join(base_dir, "data", "processed", "kappa_obs.npy")
+    out_unnorm = os.path.join(base_dir, "data", "processed", "kappa_obs_unnorm.npy")
+
+    import json
+    with open(grid_path) as f:
+        grid_params = json.load(f)
+
+    print(f"Reconstructing kappa_obs from {csv_path}")
+    kappa_obs, kappa_unnorm, inside_counts = reconstruct_kappa_obs(csv_path, grid_params)
+    print(f"\n  Contour | inside_pixels | outside_pixels")
+    for name, ins, outs in inside_counts:
+        print(f"  {name:<25s} | {ins:>6d}        | {outs:>6d}")
+    print(f"\n  Unnormalised: min={kappa_unnorm.min():.4f}  max={kappa_unnorm.max():.4f}")
+    print(f"  Normalised:   min={kappa_obs.min():.4f}  max={kappa_obs.max():.4f}")
+    print(f"  Non-zero pixels: {int((kappa_obs > 0).sum())}")
+
+    np.save(out_path,   kappa_obs)
+    np.save(out_unnorm, kappa_unnorm)
+    import hashlib
+    with open(out_path, "rb") as f:
+        sha = hashlib.sha256(f.read()).hexdigest()
+    print(f"\n  Saved {out_path}")
+    print(f"  Saved {out_unnorm}")
+    print(f"  SHA-256 of kappa_obs.npy: {sha}")
+Step 4 — Update run_xp006.py to use the proper parser
+Replace the existing reconstruct_kappa_obs function inside run_xp006.py (the one whose body was edited to do np.load) with a clean call to the new module.
+Locate the existing reconstruct_kappa_obs function in src/run_xp006.py and replace it entirely (everything from the def reconstruct_kappa_obs line down to and including the return kappa line) with:
+pythondef reconstruct_kappa_obs(csv_path, grid_params):
+    """Reconstruct kappa_obs from the digitised 9-contour CSV.
+
+    Delegates to src.kappa_obs_reconstruction.reconstruct_kappa_obs which
+    contains the full polygon-fill logic adapted from XP-005.1
+    src/module5_comparison.py.
+
+    Returns the normalised (peak=1) 200x200 array.
+    """
+    from kappa_obs_reconstruction import reconstruct_kappa_obs as _reconstruct
+    kappa_obs, _kappa_unnorm, inside_counts = _reconstruct(csv_path, grid_params)
+    print(f"  Reconstructed from CSV: {len(inside_counts)} contour pieces")
+    return kappa_obs
+Then locate the call site inside main() where reconstruct_kappa_obs is invoked. The current call passes only kappa_obs_path. Update it to pass grid_params as well. Find the section that loads κ_obs and modify it so it now reads:
+python    # --- Reconstruct κ_obs ---
+    print("--- RECONSTRUCTING κ_obs ---")
+    kappa_obs_csv = os.path.join(BASE_DIR, KAPPA_OBS_FILE)
+    grid_params_path = os.path.join(DATA_PROC, "grid_params.json")
+    with open(grid_params_path) as f:
+        grid_params = json.load(f)
+    kappa_obs = reconstruct_kappa_obs(kappa_obs_csv, grid_params)
+    n_positive = int((kappa_obs > 0).sum())
+    print(f"  kappa_obs: shape={kappa_obs.shape}, "
+          f"non-zero pixels={n_positive} (manifest expects {KAPPA_OBS_PIXEL_COUNT})")
+    if n_positive != KAPPA_OBS_PIXEL_COUNT:
+        print(f"  ⚠ WARNING: pixel count differs from sealed manifest constant.")
+        print(f"     This is the inheritance-side check. Recording but proceeding;")
+        print(f"     the numbers are the numbers — no rescue.")
+Also update the JSON kappa_obs block — find the "kappa_obs": { ... } section in the result dict and replace with:
+python        "kappa_obs": {
+            "reconstructed_from_csv": KAPPA_OBS_FILE,
+            "reconstruction_module": "src/kappa_obs_reconstruction.py",
+            "n_positive_pixels": n_positive,
+            "manifest_expected_pixel_count": KAPPA_OBS_PIXEL_COUNT,
+            "pixel_count_matches_manifest": (n_positive == KAPPA_OBS_PIXEL_COUNT),
+            "peak_pixel_row_col": list(peak_obs),
+            "reference_snapshot": "data/processed/kappa_obs.npy",
+            "reference_snapshot_sha256_expected": "6b75561bde292b07b21f92c8de2ba59d09616aa3aed65b4314e576ac1c6a4831",
+        },
+Step 5 — Verify the parser reproduces the existing snapshot byte-for-byte
+bashcd /home/runner/workspace/xp006-pipeline
+
+# First, back up the existing snapshot so we can compare
+cp data/processed/kappa_obs.npy /tmp/kappa_obs_xp005_inherited.npy
+sha256sum /tmp/kappa_obs_xp005_inherited.npy
+
+# Now regenerate via the new parser
+python src/kappa_obs_reconstruction.py
+Capture the full stdout. Then compare:
+bashsha256sum data/processed/kappa_obs.npy /tmp/kappa_obs_xp005_inherited.npy
+echo ""
+echo "--- Numerical comparison ---"
+python -c "
+import numpy as np
+new = np.load('data/processed/kappa_obs.npy')
+old = np.load('/tmp/kappa_obs_xp005_inherited.npy')
+print(f'  Shape match: {new.shape == old.shape}')
+print(f'  Byte-exact: {np.array_equal(new, old)}')
+print(f'  Max abs diff: {np.abs(new - old).max():.6e}')
+print(f'  Non-zero pixels new: {int((new > 0).sum())}')
+print(f'  Non-zero pixels old: {int((old > 0).sum())}')
+"
+Three possible outcomes for the SHA comparison:
+OutcomeAction(i) SHAs match exactly (byte-identical)Best case. Continuity proven. Proceed.(ii) Numerical values match exactly (np.array_equal == True) but SHA differs (likely numpy version metadata)Acceptable — array contents are byte-identical; the .npy header bytes differ trivially. Proceed but document.(iii) Numerical values differSTOP AND REPORT. This means either the parser logic drifted from XP-005.1 or the inherited .npy was different to begin with. Diagnose before any further work — the verdict could change.
+Report which outcome occurred and full diagnostic output.
+Step 6 — Re-run the full pipeline
+(Only if Step 5 outcome was (i) or (ii).)
+bashcd /home/runner/workspace/xp006-pipeline
+python src/run_xp006.py
+echo "---"
+echo "Exit code: $?"
+Expected: All four metric values identical to the prior run (because kappa_obs array is the same to within numerical noise):
+
+χ²/dof improvement: +0.4833
+Peak offset: 85.51″
+Residual RMS: 0.4129
+Stability: 0.0195
+Verdict: FAIL (2/4)
+
+If any metric changes by more than 0.0001, stop and report. The kappa_obs array should be identical, so all metrics should be too. Any drift indicates a code path issue.
+Step 7 — Remove the .npy gitignore exception (so the reference snapshot can be committed)
+bashcd /home/runner/workspace/xp006-pipeline
+cat .gitignore
+Find the line data/processed/*.npy. Replace it with two lines:
+data/processed/*.npy
+!data/processed/kappa_obs.npy
+The ! is git's negation pattern — it un-ignores that one specific file while keeping all other .npy files (the regenerable parametric fields) excluded.
+Verify:
+bashgit check-ignore -v data/processed/kappa_obs.npy
+git check-ignore -v data/processed/rho_field.npy
+First should print nothing (NOT ignored). Second should still confirm it IS ignored.
+Step 8 — Create results/RUN_NOTES_XP006.md
+bashcat > results/RUN_NOTES_XP006.md << 'EOF'
+# XP-006 GDFLM v1.0 — Run Notes
+
+## Schema deviation discovered during Build Prompt 4
+
+When `run_xp006.py` was first executed (Build Prompt 4), the κ_obs reconstruction
+function expected CSV columns named `x`, `y`, `kappa`. The actual file at
+`data/digitised/clowe2006_kappa.csv` has a different schema: 9 contours, each
+spanning a paired `X`, `Y` column block, with the contour level encoded in the
+column header (e.g. `kappa_0.23_main`). The expected schema was drawn from a
+simpler loader convention; the actual schema requires the polygon-fill logic
+that lives in XP-005.1's `src/module5_comparison.py`.
+
+Per the build prompt's "stop and report" instruction, the run was halted, the
+issue was diagnosed, and a decision was made.
+
+## Initial decision (Build Prompt 4)
+
+The function body of `reconstruct_kappa_obs()` inside `run_xp006.py` was edited
+in-line to load `data/processed/kappa_obs.npy` directly (a byte-for-byte
+inheritance from XP-005.1's prior run on the same CSV). The function signature
+was preserved. The run completed cleanly with this substitution.
+
+Verdict produced: FAIL (2/4) — recorded in initial XP006_results.json.
+
+## Provenance gap identified post-run
+
+The initial `XP006_results.json` declared `kappa_obs.source_csv` as the CSV
+path, but the run did not parse the CSV — it loaded the .npy. A skeptic
+cloning the XP-006 repo at that point could not reproduce the verdict because
+`kappa_obs.npy` was `.gitignore`-excluded and lived only in the local workspace
+as a side-effect of XP-005.1.
+
+## Provenance fix (Build Prompt 4.1)
+
+1. Polygon-fill reconstruction logic from XP-005.1 `src/module5_comparison.py`
+   was lifted into a new standalone module `src/kappa_obs_reconstruction.py`,
+   imports adapted, calibration anchors copied verbatim.
+
+2. `run_xp006.py` updated to call the new module instead of `np.load`. The
+   function name `reconstruct_kappa_obs` is retained but now actually
+   reconstructs.
+
+3. The new parser was verified to reproduce the inherited
+   `kappa_obs.npy` (XP-005.1 SHA-256
+   `6b75561bde292b07b21f92c8de2ba59d09616aa3aed65b4314e576ac1c6a4831`)
+   to numerical equality — confirming the inheritance is faithful and the
+   in-repo regeneration is the canonical path.
+
+4. `.gitignore` updated to permit `data/processed/kappa_obs.npy` to be
+   committed as a sealed reference snapshot. All other `.npy` files
+   (regenerable parametric fields) remain excluded.
+
+5. `XP006_results.json` updated to declare both the CSV reconstruction path
+   and the reference snapshot SHA, removing the misleading source declaration.
+
+6. Pipeline re-run end-to-end. All four metric values reproduced to numerical
+   equality.
+
+## Final verdict (unchanged): FAIL (2/4)
+
+The metric values are not affected by this fix. The kappa_obs array used in
+the original run and the array produced by the new parser are numerically
+identical — the only thing that changed is the audit trail.
+
+## What this episode demonstrates
+
+- Pre-flight CSV schema verification (independent of the "files exist" check)
+  should be added to the workflow doc as a future requirement. Cowork would
+  have caught this during Phase 2 if the schema-confirmation step had been
+  explicit.
+- The "stop and report" instruction worked as intended. The schema mismatch
+  was caught before the verdict was committed.
+- The provenance gap was caught and fixed before the Gate 4 review package
+  went to Grok. The result is unchanged but the audit trail is now
+  self-consistent.
+
+## Workflow lesson recorded
+
+Future pipeline pre-flight phases must include explicit schema validation
+of any CSV inputs against the loader's expected column structure, not just
+file existence checks. Build prompts must verify schema before issuing
+the run prompt.
+EOF
+cat results/RUN_NOTES_XP006.md
+Step 9 — Confirm everything one last time before commit
+bashcd /home/runner/workspace/xp006-pipeline
+md5sum manifest.py
+python manifest.py
+sha256sum data/processed/kappa_obs.npy
+ls -la results/XP006_*.{json,md,png} src/kappa_obs_reconstruction.py src/run_xp006.py
+echo ""
+echo "--- Verdict still FAIL (2/4)? ---"
+python -c "
+import json
+with open('results/XP006_results.json') as f:
+    r = json.load(f)
+pf = r['pass_fail']
+print(f'Overall verdict: {pf[\"overall_verdict\"]}')
+print(f'n_pass: {pf[\"n_pass\"]}/4')
+for c in pf['criteria']:
+    print(f'  {c[\"name\"]:<32} measured={c[\"measured\"]:<12} threshold={c[\"threshold\"]:<10} {\"PASS\" if c[\"passed\"] else \"FAIL\"}')
+print()
+print(f'kappa_obs source: {r[\"kappa_obs\"].get(\"reconstructed_from_csv\", \"MISSING\")}')
+print(f'reference snapshot SHA expected: {r[\"kappa_obs\"].get(\"reference_snapshot_sha256_expected\", \"MISSING\")[:16]}...')
+"
+Step 10 — Audit anchor
+bashcd /home/runner/workspace
+git status
+git add -A
+git status
+Show the final git status. New files should include:
+
+xp006-pipeline/src/kappa_obs_reconstruction.py
+xp006-pipeline/data/processed/kappa_obs.npy
+xp006-pipeline/results/RUN_NOTES_XP006.md
+modifications to xp006-pipeline/src/run_xp006.py, xp006-pipeline/results/XP006_results.json, xp006-pipeline/results/XP006_VERDICT.md, xp006-pipeline/.gitignore, possibly xp006-pipeline/requirements.txt
+
+Then create the annotation file:
+bashcat > /tmp/p41_annotation.txt << 'EOF'
+AUDIT ANCHOR: XP-006 GDFLM v1.0 — Provenance Fix (Build Prompt 4.1)
+
+Closes the provenance gap identified in the initial Gate 4 run (Build Prompt 4),
+where the kappa_obs reconstruction function body had been edited in-line to
+load an inherited .npy file from XP-005.1 instead of parsing the in-repo CSV.
+
+The verdict is UNCHANGED. The audit trail is now self-consistent and the
+result is independently reproducible from the XP-006 repo alone.
+
+=== SEAL UNCHANGED ===
+Manifest SHA-256: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+Manifest md5:     ad2f062e4538c6006031b9033337dbe0
+
+=== CHANGES IN THIS COMMIT ===
+- NEW: src/kappa_obs_reconstruction.py
+       (polygon-fill logic lifted from XP-005.1 src/module5_comparison.py
+        with imports adapted and calibration anchors copied verbatim)
+- MOD: src/run_xp006.py
+       (reconstruct_kappa_obs now actually reconstructs from CSV via the
+        new module; signature preserved; call site updated to pass grid_params)
+- NEW: data/processed/kappa_obs.npy
+       (sealed reference snapshot, SHA-256
+        6b75561bde292b07b21f92c8de2ba59d09616aa3aed65b4314e576ac1c6a4831;
+        .gitignore exception added so future clones can verify against it)
+- MOD: .gitignore (kappa_obs.npy un-ignored; other .npy files still excluded)
+- MOD: results/XP006_results.json
+       (kappa_obs block now declares both CSV reconstruction path and
+        reference snapshot SHA; misleading source_csv declaration removed)
+- MOD: results/XP006_VERDICT.md (updated source declarations)
+- NEW: results/RUN_NOTES_XP006.md
+       (full disclosure of schema deviation, decision, and fix)
+- MOD: requirements.txt (matplotlib added if not previously listed)
+
+=== VERDICT UNCHANGED ===
+chi2/dof improvement = +0.4833 (PASS, threshold ≥ +0.25)
+Peak offset          = 85.51"  (FAIL, threshold < 30")
+Residual RMS         = 0.4129  (FAIL, threshold ≤ 0.2)
+Stability            = 0.0195  (PASS, threshold < 0.10)
+OVERALL: FAIL (2/4 criteria passed)
+
+=== INHERITANCE CONFIRMED (THIRD INDEPENDENT CHECK) ===
+1. XP-005.1 manifest constants matched in XP-006 manifest      [Build Prompt 1]
+2. T[100,132] = 10.056 keV ≡ XP-005.1 reported 10.06           [Build Prompt 2]
+3. In-repo CSV parser reproduces XP-005.1 kappa_obs.npy        [Build Prompt 4.1]
+
+=== WORKFLOW LESSON RECORDED ===
+Future pipeline pre-flight phases must include explicit CSV schema validation
+(column structure check) in addition to file-existence checks. Build prompts
+must verify schema before issuing run prompts. Documented in
+results/RUN_NOTES_XP006.md.
+
+=== GATES ===
+Gate 1 (Planning):        PASS
+Gate 1 (Manifest seal):   PASS
+Gate 2 (Mock validation): PASS (8/8)
+Gate 4 (Results):         COMPLETE — verdict FAIL (2/4), reproducible from repo
+
+=== NEXT ===
+Assemble Gate 4 review package for Grok. Numbers, provenance, and the
+schema-deviation disclosure all on the table for review.
+EOF
+Then commit and push:
+bashgit commit --allow-empty -F /tmp/p41_annotation.txt
+git log --oneline -8
+git push origin main
+Report Back
+ItemValueStep 1 — manifest seal preservedyes / noStep 1 — kappa_obs.npy SHA matches 6b75561b…4831yes / noStep 2 — matplotlib present in requirementsyes / noStep 5 — full stdout from kappa_obs_reconstruction.py standalone run(paste)Step 5 — SHA comparison new vs inheritedmatch / numerical-only / differStep 5 — np.array_equal resultTrue / FalseStep 5 — Max abs diff(paste)Step 5 — Outcome (i / ii / iii)(paste)Step 6 — full stdout from python src/run_xp006.py(paste tail with metrics)Step 6 — Verdict still FAIL (2/4) with same four numbersyes / no (paste 4 metrics)Step 7 — kappa_obs.npy no longer ignoredyes / noStep 7 — rho_field.npy still ignoredyes / noStep 9 — final consistency dump(paste)Step 10 — git status after git add -A(paste)Step 10 — annotation commit SHA(paste)Step 10 — git push resultsuccess / errorStep 10 — files visible on origin/mainyes / no
+Do Not
+
+Modify manifest.py or manifest_xp005.py
+Modify the calibration constants RA1, RA2, X1_DIG, X2_DIG, DEC_CENTRE etc. — they are inherited verbatim
+Modify the four PASS/FAIL thresholds
+"Improve" the parser logic to clean up the contour fill — byte-for-byte continuity with XP-005.1 is the point
+Delete the original kappa_obs.npy before Step 5 comparison
+Commit if Step 5 outcome is (iii) — diagnose first
+Commit if Step 6 metrics drift — diagnose first
+Force-push or amend prior commits
+
+
+End of Build Prompt 4.1.

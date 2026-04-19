@@ -4,6 +4,7 @@
 *.pkl
 data/raw/*
 data/processed/*.npy
+!data/processed/kappa_obs.npy
 checkpoints/*.pkl
 
 # Keep directory structure

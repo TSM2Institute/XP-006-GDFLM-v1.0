@@ -64,34 +64,22 @@ os.makedirs(CKPT_DIR, exist_ok=True)
 
 
 # ==========================================================================
-# κ_OBS RECONSTRUCTION (load pre-computed XP-005.1 inheritance .npy)
+# κ_OBS RECONSTRUCTION (polygon-fill parser from in-repo CSV)
 # ==========================================================================
 
-def reconstruct_kappa_obs(csv_path):
-    """Load the κ_obs grid inherited byte-for-byte from XP-005.1.
+def reconstruct_kappa_obs(csv_path, grid_params):
+    """Reconstruct kappa_obs from the digitised 9-contour CSV.
 
-    The source CSV (clowe2006_kappa.csv) stores nine digitised contours in a
-    multi-column format (pairs of X/Y columns per contour) with coordinates in
-    normalised/arcsec space — not in 0-199 pixel coordinates.  XP-005.1
-    performed the full digitisation, coordinate transformation, and cubic
-    griddata interpolation including manual closure of the kappa_0.16_ur gap
-    (sealed warning, carried forward).  The result was saved as
-    data/processed/kappa_obs.npy (peak-normalised, 7487 non-zero pixels).
+    Delegates to src.kappa_obs_reconstruction.reconstruct_kappa_obs which
+    contains the full polygon-fill logic adapted from XP-005.1
+    src/module5_comparison.py.
 
-    Loading that .npy directly is the byte-for-byte inheritance path and
-    avoids re-implementing the coordinate system that XP-005.1 established.
-    The CSV path argument is retained for interface compatibility and
-    provenance logging.
+    Returns the normalised (peak=1) 200x200 array.
     """
-    npy_path = os.path.join(DATA_PROC, "kappa_obs.npy")
-    if not os.path.exists(npy_path):
-        raise FileNotFoundError(
-            f"kappa_obs.npy not found at {npy_path}. "
-            f"This file is the XP-005.1 inheritance artefact and must exist.")
-    kappa = np.load(npy_path)
-    # Floor negatives (should be none, but defensive)
-    kappa = np.where(kappa < 0, 0.0, kappa)
-    return kappa
+    from kappa_obs_reconstruction import reconstruct_kappa_obs as _reconstruct
+    kappa_obs, _kappa_unnorm, inside_counts = _reconstruct(csv_path, grid_params)
+    print(f"  Reconstructed from CSV: {len(inside_counts)} contour pieces")
+    return kappa_obs
 
 
 # ==========================================================================
@@ -240,8 +228,11 @@ def main():
 
     # --- Reconstruct κ_obs ---
     print("--- RECONSTRUCTING κ_obs ---")
-    kappa_obs_path = os.path.join(BASE_DIR, KAPPA_OBS_FILE)
-    kappa_obs = reconstruct_kappa_obs(kappa_obs_path)
+    kappa_obs_csv = os.path.join(BASE_DIR, KAPPA_OBS_FILE)
+    grid_params_path = os.path.join(DATA_PROC, "grid_params.json")
+    with open(grid_params_path) as f:
+        grid_params = json.load(f)
+    kappa_obs = reconstruct_kappa_obs(kappa_obs_csv, grid_params)
     n_positive = int((kappa_obs > 0).sum())
     print(f"  kappa_obs: shape={kappa_obs.shape}, "
           f"non-zero pixels={n_positive} (manifest expects {KAPPA_OBS_PIXEL_COUNT})")
@@ -342,11 +333,14 @@ def main():
         "timestamp_utc": dt.datetime.utcnow().isoformat() + "Z",
         "manifest_sha256": sig,
         "kappa_obs": {
-            "source_csv": KAPPA_OBS_FILE,
+            "reconstructed_from_csv": KAPPA_OBS_FILE,
+            "reconstruction_module": "src/kappa_obs_reconstruction.py",
             "n_positive_pixels": n_positive,
             "manifest_expected_pixel_count": KAPPA_OBS_PIXEL_COUNT,
             "pixel_count_matches_manifest": (n_positive == KAPPA_OBS_PIXEL_COUNT),
             "peak_pixel_row_col": list(peak_obs),
+            "reference_snapshot": "data/processed/kappa_obs.npy",
+            "reference_snapshot_sha256_expected": "6b75561bde292b07b21f92c8de2ba59d09616aa3aed65b4314e576ac1c6a4831",
         },
         "kappa_model": {
             "peak_pixel_row_col": list(peak_model_pix),
