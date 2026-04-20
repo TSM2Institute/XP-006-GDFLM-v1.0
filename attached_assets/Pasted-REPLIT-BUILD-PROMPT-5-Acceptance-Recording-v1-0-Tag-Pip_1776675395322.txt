@@ -1,0 +1,233 @@
+REPLIT BUILD PROMPT 5 — Acceptance Recording + v1.0 Tag
+Pipeline: XP-006 GDFLM v1.0
+Sealed manifest SHA-256: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+Scope: Record Geoffrey's formal acceptance verbatim, update the verdict markdown with the scope clarification, add a final audit anchor, tag the repo v1.0, push tag to GitHub.
+Step 1 — Seal check (one more time)
+bashcd /home/runner/workspace/xp006-pipeline
+md5sum manifest.py
+python manifest.py
+Must still print:
+
+md5: ad2f062e4538c6006031b9033337dbe0
+hash: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+
+If drift, stop and report.
+Step 2 — Create docs/GEOFFREY_ACCEPTANCE.md
+Create the file at /home/runner/workspace/xp006-pipeline/docs/GEOFFREY_ACCEPTANCE.md with EXACT content below. Geoffrey's response is preserved verbatim.
+markdown# XP-006 GDFLM v1.0 — Formal Acceptance
+
+**Pipeline:** XP-006 Gradient-Dominant Field Lensing Model v1.0
+**Model tested:** K(x) = ρ̂ + |∇T̂| + |∇ρ̂| under equal weighting (α=β=γ=1.0) and zero free parameters
+**Verdict submitted to Geoffrey:** FAIL (2 of 4 pre-registered criteria met)
+**Verdict review:** Gate 4 PASS (Claude + Grok unanimous, 19 April 2026)
+**Manifest SHA-256:** `2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4`
+
+---
+
+## Geoffrey E. Thwaites — Formal Response (verbatim, 19 April 2026)
+
+> Graham,
+>
+> **ACCEPT** — verdict stands as FAIL (2/4).
+>
+> The result is accepted as a valid negative outcome for the specific model tested:
+> K(x) = ρ̂ + |∇T̂| + |∇ρ̂| under equal weighting and zero free parameters.
+>
+> **Clarification (important for record):**
+>
+> This result excludes this specific additive gas + gradient formulation only. It does not establish that a non-gas mass tracer is required, nor does it test the TSM2.1 density-gradient propagation (refractive) lensing model.
+>
+> As defined in the core equations, lensing in TSM2.1 is governed by propagation through a density-dependent refractive index:
+>
+> n(r) = n₀ + k_TSM · ρ_H(r)
+> θ_bend = ∫ ∇n(r) dr
+>
+> This is a path-integral propagation problem, not a static additive field reconstruction. XP-006 therefore does not challenge the TSM2.1 lensing mechanism.
+>
+> **Positive result to retain:**
+>
+> The +48% χ²/dof improvement confirms that gradient terms (|∇T|, |∇ρ|) contain real physical signal and should be retained in future formulations.
+>
+> **Programme position:**
+>
+> Record XP-006 as FAIL (model class excluded: zero-parameter additive gas/gradient reconstruction).
+>
+> **Next step (directional, not a modification of this test):**
+>
+> Proceed to a propagation-based test aligned with the TSM2.1 lensing equation rather than further additive field variants.
+>
+> No post-hoc adjustment to XP-006.
+>
+> Regards,
+> Geoff
+
+---
+
+## Formal Scope of the XP-006 Falsification
+
+Per Geoffrey's acceptance, the falsification boundary is:
+
+**Excluded by this result:** The specific class of lensing models where κ is reconstructed as an equal-weighted, zero-parameter, additive sum of min-max-normalised gas-derived fields (gas density + gas density gradient + gas temperature gradient) on the Bullet Cluster.
+
+**Not tested by this result:**
+- The TSM2.1 density-gradient propagation (refractive) lensing model, which is a path-integral computation θ_bend = ∫∇n(r) dr through a refractive medium, mathematically and physically distinct from additive static field reconstruction.
+- SKIN-a-CAT v1.2's k_TSM × N_HI formulation, which uses a different lensing mechanism entirely.
+- Non-equal-weighted variants of the additive formulation (α, β, γ as fitted parameters).
+- GDFLM on relaxed (non-merging) clusters where gas and mass are spatially co-located.
+
+## Retained Positive Result
+
+The χ²/dof improvement of +48.33% over the X-ray surface brightness baseline is recorded as a genuine physical finding: gradient terms |∇T| and |∇ρ| carry lensing-relevant information beyond raw gas density. This signal should be retained in future formulations.
+
+## Programme Record Entry
+
+**XP-006 GDFLM v1.0 — FAIL (2/4). Model class excluded: zero-parameter additive gas/gradient reconstruction on the Bullet Cluster.**
+
+## Next Direction (Programme-Level, Not XP-006 Modification)
+
+Per Geoffrey: proceed to a propagation-based test aligned with the TSM2.1 lensing equation. This would require designing a new pipeline from scratch, not modifying XP-006.
+Step 3 — Append Formal Acceptance section to results/XP006_VERDICT.md
+Do not overwrite the existing verdict content. Append to the end of the file:
+bashcd /home/runner/workspace/xp006-pipeline
+
+cat >> results/XP006_VERDICT.md << 'EOF'
+
+---
+
+## Formal Acceptance
+
+**Accepted by Geoffrey E. Thwaites** (theory principal, TSM2.1) on 19 April 2026. Full response and scope clarification in `docs/GEOFFREY_ACCEPTANCE.md`.
+
+### Falsification scope (per Geoffrey's clarification)
+
+**Excluded:** The specific class of models where κ is reconstructed as an equal-weighted, zero-parameter additive sum of min-max-normalised gas-derived fields (ρ + |∇T| + |∇ρ|) on the Bullet Cluster.
+
+**NOT tested by this result:**
+- The TSM2.1 density-gradient propagation (refractive) lensing model — a path-integral computation θ_bend = ∫∇n(r) dr through a refractive medium, which is mathematically and physically distinct from static additive field reconstruction.
+- SKIN-a-CAT v1.2's k_TSM × N_HI formulation.
+- Non-equal-weighted variants (α, β, γ as fitted parameters).
+- GDFLM on relaxed (non-merging) clusters.
+
+### Retained positive result
+
+The +48.33% χ²/dof improvement vs X-ray SB baseline confirms that gradient terms |∇T| and |∇ρ| carry real lensing-relevant information. Retained for future formulations.
+
+### Programme record
+
+XP-006 GDFLM v1.0 — **FAIL (2/4)**. Model class excluded: zero-parameter additive gas/gradient reconstruction on the Bullet Cluster. Sealed as v1.0.
+EOF
+
+cat results/XP006_VERDICT.md | tail -40
+Step 4 — Create the final audit anchor file
+bashcat > /tmp/p5_annotation.txt << 'EOF'
+AUDIT ANCHOR: XP-006 GDFLM v1.0 — Formal Acceptance + v1.0 Seal
+
+Geoffrey E. Thwaites has formally accepted the XP-006 GDFLM v1.0 verdict.
+Response recorded verbatim in docs/GEOFFREY_ACCEPTANCE.md with scope
+clarification preserved.
+
+=== FINAL VERDICT (SEALED) ===
+XP-006 GDFLM v1.0 — FAIL (2 of 4 pre-registered criteria met)
+
+Criterion                          Threshold    Measured    Result
+chi2/dof improvement vs X-ray SB   >= +25%      +48.33%     PASS
+Peak offset (kappa_model vs obs)   < 30"        85.51"      FAIL
+Residual RMS                       <= 0.2       0.4129      FAIL
+Bootstrap stability                < 10%        1.95%       PASS
+
+=== GEOFFREY'S SCOPE CLARIFICATION ===
+This result excludes the specific additive gas + gradient formulation
+(equal-weighted, zero-parameter) on the Bullet Cluster only.
+
+It does NOT test:
+- The TSM2.1 density-gradient propagation (refractive) lensing model
+  (theta_bend = integral(grad n(r) dr)), which is a path-integral
+  propagation problem, mathematically and physically distinct from
+  static additive field reconstruction
+- SKIN-a-CAT v1.2's k_TSM x N_HI formulation
+- Non-equal-weighted GDFLM variants
+- GDFLM on relaxed clusters
+
+Retained positive result: +48.33% chi2/dof improvement confirms
+gradient terms contain real physical signal, to be retained in
+future formulations.
+
+=== PROGRAMME RECORD ENTRY ===
+XP-006 GDFLM v1.0 -- FAIL (2/4). Model class excluded: zero-parameter
+additive gas/gradient reconstruction on the Bullet Cluster.
+
+=== SEAL UNCHANGED ===
+Manifest SHA-256: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+Manifest md5:     ad2f062e4538c6006031b9033337dbe0
+
+=== GATES COMPLETE ===
+Gate 1 (Planning):        PASS -- 7211775
+Gate 1 (Manifest seal):   PASS -- 7211775
+Gate 2 (Mock validation): PASS (8/8) -- 0915204
+Gate 4 (Results):         PASS -- 1841999 (initial) + aa0984b (provenance fix)
+Gate 4 (Review):          PASS (Claude + Grok unanimous)
+Geoffrey acceptance:      ACCEPT (19 April 2026)
+
+=== DIRECTION (programme-level, not XP-006 modification) ===
+Per Geoffrey: proceed to a propagation-based test aligned with the
+TSM2.1 lensing equation. Would require a new pipeline from scratch,
+not a modification of XP-006. Scope, design, and kickstart brief TBD.
+
+=== NEXT ===
+Tag this commit as v1.0. XP-006 is closed.
+EOF
+Step 5 — Stage, commit, push the annotation
+bashcd /home/runner/workspace
+git status
+git add -A
+git status
+git commit --allow-empty -F /tmp/p5_annotation.txt
+git log --oneline -10
+git push origin main
+Capture git log and push result.
+Step 6 — Tag v1.0 and push the tag
+bashcd /home/runner/workspace
+git tag -a v1.0 -m "XP-006 GDFLM v1.0 — Sealed release
+
+Final verdict: FAIL (2/4 pre-registered criteria met).
+
+Gradient-dominant gas-only model K(x) = rho_hat + |grad_T_hat| + |grad_rho_hat|
+with equal weighting (alpha=beta=gamma=1.0) and zero free parameters does not
+reproduce the observed kappa structure of the Bullet Cluster within the
+pre-registered thresholds.
+
+Accepted by Geoffrey E. Thwaites 19 April 2026. Scope limited to the specific
+additive gas + gradient formulation; does not test TSM2.1 propagation-based
+lensing.
+
+Manifest SHA-256: 2faf4b6c5e1c2ee40000d6f4a3b3811df151aff8f582036b2d75a97b708ccfc4
+
+See docs/GEOFFREY_ACCEPTANCE.md and results/XP006_VERDICT.md for full detail."
+
+git tag -l -n20 v1.0
+git push origin v1.0
+Step 7 — Final confirmation
+bashcd /home/runner/workspace
+echo "=== Remote tags ==="
+git ls-remote --tags origin
+echo ""
+echo "=== Last 12 commits on origin/main ==="
+git log --oneline origin/main -12
+echo ""
+echo "=== Manifest seal (final check) ==="
+cd xp006-pipeline
+md5sum manifest.py
+python manifest.py
+Report Back
+ItemValueStep 1 — seal preservedyes / noStep 2 — docs/GEOFFREY_ACCEPTANCE.md createdyes / noStep 3 — verdict markdown appended (last 40 lines)(paste)Step 5 — final annotation commit SHA(paste)Step 5 — git push origin main resultsuccess / errorStep 6 — v1.0 tag createdyes / noStep 6 — git push origin v1.0 resultsuccess / errorStep 7 — v1.0 visible in git ls-remote --tags originyes / noStep 7 — last 12 commits (paste)(paste)Step 7 — manifest seal final checkyes / no
+Do Not
+
+Modify manifest.py, manifest_xp005.py, or any file producing the four metric values
+Rewrite the verdict numbers — they are sealed
+Rewrite Geoffrey's response — it must be preserved verbatim
+Tag anything other than v1.0 on this commit
+Force-push, amend, or rewrite history
+Delete any prior AUDIT ANCHOR commits
+
+
+End of Build Prompt 5.

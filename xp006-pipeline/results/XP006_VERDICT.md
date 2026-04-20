@@ -43,3 +43,26 @@ Stability metric: **0.0195** (threshold < 0.1)
 - `results/XP006_components.png`
 - `results/XP006_residual_map.png`
 - `checkpoints/run_xp006_state.pkl`
+---
+
+## Formal Acceptance
+
+**Accepted by Geoffrey E. Thwaites** (theory principal, TSM2.1) on 19 April 2026. Full response and scope clarification in `docs/GEOFFREY_ACCEPTANCE.md`.
+
+### Falsification scope (per Geoffrey's clarification)
+
+**Excluded:** The specific class of models where κ is reconstructed as an equal-weighted, zero-parameter additive sum of min-max-normalised gas-derived fields (ρ + |∇T| + |∇ρ|) on the Bullet Cluster.
+
+**NOT tested by this result:**
+- The TSM2.1 density-gradient propagation (refractive) lensing model — a path-integral computation θ_bend = ∫∇n(r) dr through a refractive medium, which is mathematically and physically distinct from static additive field reconstruction.
+- SKIN-a-CAT v1.2's k_TSM × N_HI formulation.
+- Non-equal-weighted variants (α, β, γ as fitted parameters).
+- GDFLM on relaxed (non-merging) clusters.
+
+### Retained positive result
+
+The +48.33% χ²/dof improvement vs X-ray SB baseline confirms that gradient terms |∇T| and |∇ρ| carry real lensing-relevant information. Retained for future formulations.
+
+### Programme record
+
+XP-006 GDFLM v1.0 — **FAIL (2/4)**. Model class excluded: zero-parameter additive gas/gradient reconstruction on the Bullet Cluster. Sealed as v1.0.
